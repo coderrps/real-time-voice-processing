@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Audio Processing App</title>
+    <style>
+        body {
+            font-family: Arial, sans-serif;
+            background-color: #f0f0f0;
+            margin: 0;
+            padding: 20px;
+        }
+        .container {
+            max-width: 800px;
+            margin: 0 auto;
+            background: #fff;
+            padding: 20px;
+            border-radius: 8px;
+            box-shadow: 0 0 10px rgba(0, 0, 0, 0.1);
+        }
+        h1 {
+            text-align: center;
+        }
+        .status {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .audio-player {
+            margin: 20px 0;
+            text-align: center;
+        }
+        .audio-player audio {
+            width: 100%;
+            max-width: 400px;
+            border-radius: 5px;
+        }
+        .results {
+            margin-top: 20px;
+        }
+        .results p {
+            font-size: 18px;
+            margin: 5px 0;
+        }
+        .error {
+            color: red;
+        }
+        .controls {
+            text-align: center;
+            margin: 20px 0;
+        }
+        .controls button {
+            padding: 10px 20px;
+            margin: 5px;
+            border: none;
+            border-radius: 5px;
+            color: #fff;
+            background-color: #007bff;
+            cursor: pointer;
+            position: relative;
+            overflow: hidden;
+        }
+        .controls button:disabled {
+            background-color: #6c757d;
+            cursor: not-allowed;
+        }
+        .controls button:active {
+            background-color: #0056b3;
+        }
+        .loading {
+            display: none;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+        }
+        .loading img {
+            width: 30px;
+            height: 30px;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Audio Processing App</h1>
+        <div class="status">
+            <p id="recording-status">Press "Start Recording" to begin.</p>
+        </div>
+        <div class="controls" id="controls">
+            <button id="start-recording">Start Recording</button>
+            <button id="stop-recording" disabled>Stop Recording</button>
+            <button id="upload" disabled>Upload</button>
+            <button id="refresh">Record New Audio</button>
+            <div class="loading" id="loading">
+                <img src="/load.gif" alt="Loading..."> <!-- Add your loading spinner GIF -->
+            </div>
+        </div>
+        <div class="audio-player" id="audio-player" style="display: none;">
+            <!-- Audio playback will go here -->
+            {% if audio_file %}
+                <audio controls>
+                    <source src="{{ audio_file }}" type="audio/wav">
+                    Your browser does not support the audio element.
+                </audio>
+            {% endif %}
+        </div>
+        <div class="results" id="results">
+            {% if transcription %}
+                <p><strong>Transcription:</strong> {{ transcription }}</p>
+                <p><strong>Emotion:</strong> {{ emotion }}</p>
+                <p><strong>Summary:</strong> {{ summary }}</p>
+            {% elif error %}
+                <p class="error">{{ error }}</p>
+            {% endif %}
+        </div>
+    </div>
+    <script>
+        let isRecording = false;
+        let mediaRecorder;
+        let audioChunks = [];
+
+        document.getElementById('start-recording').addEventListener('click', async () => {
+            if (navigator.mediaDevices && navigator.mediaDevices.getUserMedia) {
+                const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+                mediaRecorder = new MediaRecorder(stream);
+
+                mediaRecorder.ondataavailable = (event) => {
+                    audioChunks.push(event.data);
+                };
+
+                mediaRecorder.onstop = () => {
+                    document.getElementById('upload').disabled = false; // Enable upload button
+                };
+
+                mediaRecorder.start();
+                document.getElementById('recording-status').innerText = 'Recording...';
+                document.getElementById('start-recording').disabled = true;
+                document.getElementById('stop-recording').disabled = false;
+                document.getElementById('refresh').disabled = false;
+                isRecording = true;
+            }
+        });
+
+        document.getElementById('stop-recording').addEventListener('click', () => {
+            if (isRecording && mediaRecorder) {
+                mediaRecorder.stop();
+                document.getElementById('recording-status').innerText = 'Recording stopped. Click "Upload" to process.';
+                document.getElementById('start-recording').disabled = false;
+                document.getElementById('stop-recording').disabled = true;
+                isRecording = false;
+            }
+        });
+
+        document.getElementById('refresh').addEventListener('click', () => {
+            // Prompt the user to record a new audio
+            const confirmRefresh = confirm("To record a new audio, please refresh the page.");
+            if (confirmRefresh) {
+                window.location.reload();
+            }
+        });
+
+        document.getElementById('upload').addEventListener('click', () => {
+            if (audioChunks.length) {
+                const audioBlob = new Blob(audioChunks, { type: 'audio/wav' });
+                const formData = new FormData();
+                formData.append('audio', audioBlob, 'recording.wav');
+
+                // Show loading indicator
+                document.getElementById('loading').style.display = 'block';
+                document.getElementById('upload').disabled = true;
+
+                fetch('/process_audio', {
+                    method: 'POST',
+                    body: formData
+                })
+                .then(response => response.text())
+                .then(result => {
+                    document.getElementById('results').innerHTML = result;
+                    document.getElementById('controls').style.display = 'block'; // Keep controls visible
+                    document.getElementById('loading').style.display = 'none'; // Hide loading indicator
+                })
+                .catch(error => {
+                    document.getElementById('results').innerHTML = `<p class="error">${error}</p>`;
+                    document.getElementById('loading').style.display = 'none'; // Hide loading indicator
+                });
+            }
+        });
+    </script>
+</body>
+</html>
